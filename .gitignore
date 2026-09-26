@@ -1,0 +1,28 @@
+﻿# Credentials and sensitive tokens (NEVER COMMIT)
+credentials.json
+token.json
+.env
+*.pem
+*.key
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+
+# Testing and cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local logs and checkpoints
+*.log
+checkpoint_*.json
+audit_log.jsonl
+state_checkpoint.json

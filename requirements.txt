@@ -1,0 +1,14 @@
+﻿# Google APIs & Authentication
+google-api-python-client>=2.118.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0
+
+# Data validation & modeling
+pydantic>=2.6.0
+python-dateutil>=2.8.2
+
+# Capstone Dashboard (Lab 14 & Human Review Gate)
+streamlit>=1.31.0
+
+# Testing & Quality
+pytest>=8.0.0
