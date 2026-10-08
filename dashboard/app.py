@@ -30,6 +30,81 @@ AUDIT_PATH = ROOT / "audit_log.jsonl"
 CHECKPOINT_PATH = ROOT / "runtime_checkpoint.jsonl"
 
 
+def get_google_account_email() -> Optional[str]:
+    """Return the connected Gmail address if a valid non-expired token is available."""
+    cached_email = st.session_state.get("google_account_email")
+    if cached_email:
+        return cached_email
+
+    token_path = ROOT / "token.json"
+    if not token_path.exists():
+        return None
+
+    try:
+        auth = GoogleAuthManager(
+            credentials_path=str(ROOT / "credentials.json"),
+            token_path=str(token_path),
+        )
+        creds = auth.get_credentials(interactive=False)
+        if not creds or not creds.valid:
+            return None
+
+        service = auth.get_gmail_service(interactive=False)
+        profile = service.users().getProfile(userId="me").execute()
+        email = (profile or {}).get("emailAddress")
+        if email:
+            st.session_state["google_account_email"] = email
+        return email
+    except Exception:
+        return None
+
+
+def render_google_account_widget() -> None:
+    """Render a sidebar Google account status and connect action using the shared OAuth flow."""
+    connected_email = get_google_account_email()
+
+    if connected_email:
+        st.markdown(
+            f"""
+            <div class="saas-hero-badge" style="background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.45); color: #166534; width: fit-content;">
+                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#22C55E;margin-right:8px;"></span>
+                Connected as: {html.escape(connected_email)}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.caption("Only this account's inbox is accessed — nothing else is touched.")
+        if st.button("Refresh account status", use_container_width=True, key="refresh_google_account_status"):
+            st.session_state.pop("google_account_email", None)
+            st.rerun()
+        return
+
+    if st.button("Connect Google Account", type="primary", use_container_width=True, key="connect_google_account_button"):
+        try:
+            auth = GoogleAuthManager(
+                credentials_path=str(ROOT / "credentials.json"),
+                token_path=str(ROOT / "token.json"),
+            )
+            creds = auth.get_credentials(interactive=True)
+            if not creds or not creds.valid:
+                st.warning("Google account connection is not yet valid. Please try again.")
+            else:
+                service = auth.get_gmail_service(interactive=False)
+                profile = service.users().getProfile(userId="me").execute()
+                email = (profile or {}).get("emailAddress")
+                if email:
+                    st.session_state["google_account_email"] = email
+                    st.success(f"Connected as: {email}")
+                    st.info("Google auth completed. Click the refresh button if the dashboard does not update immediately.")
+                    st.rerun()
+                else:
+                    st.warning("Connected successfully, but the account email could not be read from Gmail profile data.")
+        except Exception as exc:
+            st.error(f"Google authentication could not be completed: {exc}")
+
+    st.caption("Your Google account must be added as an authorized tester for this app before connecting.")
+
+
 # =============================================================================
 # Custom SaaS Design System & CSS Injection
 # =============================================================================
@@ -435,6 +510,68 @@ header[data-testid="stHeader"] {background: rgba(11, 31, 58, 0.96); backdrop-fil
     line-height: 1.6;
 }
 
+/* ---------------- Action-item detail rows ---------------- */
+.gmail-details .detail-metadata {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+    gap: 0.65rem 1rem;
+    margin-top: 0.15rem;
+}
+
+.gmail-details .detail-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+    min-width: 0;
+}
+
+.gmail-details .detail-field span {
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748B;
+}
+
+.gmail-details .detail-field strong {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #0F172A;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.gmail-confirm-row {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin-top: 0.85rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid #E2E8F0;
+}
+
+.gmail-action-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0;
+    padding: 0.28rem 0.6rem;
+    border-radius: 999px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    color: #0F172A;
+    font-weight: 600;
+    font-size: 0.78rem;
+    line-height: 1.2;
+}
+
+.gmail-action-check input {
+    width: 16px;
+    height: 16px;
+    accent-color: #0B1F3A;
+    margin: 0;
+}
+
 /* ---------------- Tabs ---------------- */
 div[data-testid="stTabs"] button[role="tab"] {
     font-size: 0.88rem;
@@ -451,6 +588,128 @@ div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
     border-bottom-color: #0B1F3A !important;
     font-weight: 700;
     background: #EAF5FF;
+}
+
+/* ---------------- Sidebar Product Styling ---------------- */
+.sidebar-section-header {
+    font-size: 0.84rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #0F172A;
+    margin: 0.4rem 0 0.6rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sidebar-status-card {
+    background: linear-gradient(180deg, #F8FBFF 0%, #F0F9FF 100%);
+    border: 1px solid #BFDBFE;
+    border-radius: 12px;
+    padding: 0.8rem 0.85rem;
+    margin: 0.25rem 0 0.9rem 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+}
+
+.sidebar-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.25rem;
+}
+
+.sidebar-status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: #22C55E;
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+}
+
+.sidebar-status-text {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #0F172A;
+}
+
+.sidebar-status-sub {
+    font-size: 0.74rem;
+    color: #475569;
+    line-height: 1.5;
+}
+
+.sidebar-help-item {
+    display: flex;
+    gap: 0.7rem;
+    align-items: flex-start;
+    margin: 0.6rem 0;
+}
+
+.sidebar-help-badge {
+    min-width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: #EAF5FF;
+    color: #0B1F3A;
+    border: 1px solid #BFDBFE;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.sidebar-help-copy {
+    font-size: 0.8rem;
+    line-height: 1.55;
+    color: #334155;
+}
+
+.sidebar-help-copy strong {
+    font-size: 0.64rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #475569;
+    display: block;
+    margin-bottom: 0.18rem;
+}
+
+.sidebar-note {
+    color: #475569;
+    font-size: 0.75rem;
+    line-height: 1.55;
+    margin-top: 0.5rem;
+}
+
+.sidebar-roadmap {
+    margin-top: 0.3rem;
+    padding: 0.1rem 0;
+}
+
+.sidebar-roadmap h4 {
+    margin: 0 0 0.6rem 0;
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: #475569;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.sidebar-roadmap-list {
+    margin: 0;
+    padding-left: 1rem;
+    color: #334155;
+    font-size: 0.76rem;
+    line-height: 1.8;
+}
+
+.sidebar-roadmap-list li {
+    margin: 0.12rem 0;
+}
+
+.sidebar-roadmap-list strong {
+    color: #0F172A;
 }
 
 /* ---------------- Card Containers ---------------- */
@@ -828,8 +1087,26 @@ def render_empty_state(icon: str, title: str, description: str) -> None:
 
 def gmail_chip(label: str, tone: str = "neutral") -> str:
     color_class = tone if tone in {"urgent", "high", "medium", "low", "admin", "student", "collaborator", "vendor", "pending", "approved", "sent", "draft", "neutral", "tertiary"} else "neutral"
+
+    tooltip_map = {
+        "urgent": "Urgent — action is likely time-sensitive and should be reviewed first.",
+        "high": "High — important and should be reviewed soon.",
+        "medium": "Medium — normal priority within the regular workflow.",
+        "low": "Low — informational or lower urgency; can wait.",
+        "admin": "Admin — communication from university or administration.",
+        "student": "Student — email originated from a student.",
+        "collaborator": "Collaborator — academic or internal partner email.",
+        "vendor": "Vendor — external partner or recruitment/vendor communication.",
+        "pending": "Pending — this item is waiting for review or follow-up.",
+        "approved": "Approved — this action has been accepted and is ready.",
+        "sent": "Sent — this message was already dispatched.",
+        "draft": "Draft — a response is prepared but not yet finalized.",
+        "neutral": "Neutral — informational label without a special priority signal.",
+        "tertiary": "Tertiary — supporting metadata or context label.",
+    }
+    tooltip = tooltip_map.get(color_class, "Status label")
     return (
-        f'<span class="gmail-chip {color_class}">{html.escape(str(label))}</span>'
+        f'<span class="gmail-chip {color_class}" title="{html.escape(tooltip)}">{html.escape(str(label))}</span>'
     )
 
 
@@ -862,9 +1139,16 @@ def render_gmail_row(sender: str, subject: str, preview: str, chips: List[str], 
     if details_html:
         details_block = f'<div class="gmail-details">{details_html}'
         if show_checkbox:
-            details_block += '<label class="gmail-action-check"><input type="checkbox" /> Mark Confirmed</label>'
+            details_block += (
+                '<div class="gmail-confirm-row">'
+                '<label class="gmail-action-check"><input type="checkbox" /> Mark Confirmed</label>'
+                '</div>'
+            )
         details_block += '</div>'
-    st.markdown(f'<details class="gmail-item"><summary class="gmail-summary">{row_html}</summary>{details_block}</details>', unsafe_allow_html=True)
+    st.markdown(
+        f'<details class="gmail-item"><summary class="gmail-summary">{row_html}</summary>{details_block}</details>',
+        unsafe_allow_html=True,
+    )
 
 
 # =============================================================================
@@ -1049,17 +1333,25 @@ def main() -> None:
 
     # ---------------- Sidebar Controls ----------------
     with st.sidebar:
-        st.markdown("### Pipeline Configuration")
-        st.caption("Governed Node Graph with bounded validation retry & MCP Connector.")
+        st.markdown('<div class="sidebar-section-header"><span>⚙️</span>Pipeline Configuration</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="sidebar-note">Every email is checked, prioritized, and reviewed by you before anything is sent.</div>',
+            unsafe_allow_html=True,
+        )
 
+        render_google_account_widget()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-section-header"><span>📥</span>Inbox Settings</div>', unsafe_allow_html=True)
         max_results = st.slider(
             "Number of threads to fetch",
             min_value=5,
             max_value=50,
             value=20,
             step=5,
-            help="Configures the connector inbox fetch budget with automated Gmail API pagination.",
+            help="Controls how many recent email threads are pulled in for this triage run. Higher numbers take longer to process.",
         )
+        st.caption("Controls how many recent email threads are pulled in for this triage run. Higher numbers take longer to process.")
 
         st.markdown("<br>", unsafe_allow_html=True)
         run_btn = st.button("Run Full Triage Pass", type="primary", use_container_width=True)
@@ -1068,32 +1360,69 @@ def main() -> None:
             with st.spinner(f"Ingesting {max_results} threads, evaluating domain metrics, running graph..."):
                 st.session_state.graph_result = build_graph_result(max_results=max_results)
 
-        st.markdown("---")
-        st.markdown("#### Workflow Overview")
-        st.markdown(
-            """
-            - **Connector:** One trusted source surface for all inbox, history, and calendar reads.
-            - **State Machine:** Ingest → Plan → Workers ⟲ Validate → Assemble → Gate → Publish
-            - **Guardrails:** Approval gate required for mail dispatch; no silent send path.
-            - **Audit:** Durable JSONL append-only with checkpoint visibility.
-            """
-        )
+        st.markdown("<br>", unsafe_allow_html=True)
 
-        st.markdown("#### Lab Progress")
-        st.markdown(
-            """
-            <div class="review-guide">
-                <h4>Chapter 3 coverage</h4>
-                <ul>
-                    <li>Phase A: Foundations (Labs 1–6)</li>
-                    <li>Phase B: Orchestration (Labs 7–8)</li>
-                    <li>Phase C: Reliability (Labs 9–11)</li>
-                    <li>Phase D: Governance & capstone (Labs 12–14)</li>
-                </ul>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="sidebar-section-header"><span>🧭</span>How this works</div>', unsafe_allow_html=True)
+        workflow_items = [
+            ("Connector", "One secure connection reads your inbox, history, and calendar"),
+            ("State Machine", "Each email is classified, prioritized, drafted, and validated before you ever see it"),
+            ("Guardrails", "Nothing is sent without your explicit approval"),
+            ("Audit", "Every action is logged for a full audit trail"),
+        ]
+        for label, copy in workflow_items:
+            st.markdown(
+                f"""
+                <div class="sidebar-help-item">
+                    <div class="sidebar-help-badge">{html.escape(label[:2].upper())}</div>
+                    <div class="sidebar-help-copy"><strong>{html.escape(label)}</strong>{html.escape(copy)}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("View build progress", expanded=False):
+            st.markdown("#### PHASE A — Foundations (Labs 1-6) ✓ Complete")
+            st.markdown(
+                "- Lab 1: Planning loop — clarify, plan, revise\n"
+                "- Lab 2: Typed tools — verified data, not guesses\n"
+                "- Lab 3: Reusable skills — plan + format, case-agnostic\n"
+                "- Lab 4: Memory — session state vs. long-term knowledge\n"
+                "- Lab 5: Unified connector — one governed data source\n"
+                "- Lab 6: Governed runtime — budgets, audit, checkpoints"
+            )
+
+            st.markdown("#### PHASE B — Orchestration (Labs 7-8) ✓ Complete")
+            st.markdown(
+                "- Lab 7: Full pipeline graph — bounded validation retry\n"
+                "- Lab 8: Parallel processing — faster, merged by plan fit"
+            )
+
+            st.markdown("#### PHASE C — Reliability (Labs 9-11) ✓ Complete")
+            st.markdown(
+                "- Lab 9: Evidence grounding — every claim cites a real source\n"
+                "- Lab 10: Self-healing — diagnoses and fixes only what failed\n"
+                "- Lab 11: Tested builds — nothing advances without passing checks"
+            )
+
+            st.markdown("#### PHASE D — Governance & Capstone (Labs 12-14) ✓ Complete")
+            st.markdown(
+                "- Lab 12: Approval, rollback, and access control\n"
+                "- Lab 13: Domain specialists — placement & scheduling handling\n"
+                "- Lab 14: Full integrated system (what you're using right now)"
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("Learn more", expanded=False):
+            st.markdown(
+                """
+                Technical summary:
+                - Connector: unified Gmail/Calendar access layer
+                - State Machine: ingest → plan → validate → assemble → approve
+                - Guardrails: approval gate required before send
+                - Audit: append-only JSONL runtime trail
+                """
+            )
 
     # Ensure baseline run exists
     if "graph_result" not in st.session_state:
@@ -1209,31 +1538,6 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    labs = [
-        ("L01", "Agent vs Chatbot", "pass", "Clarify → plan → revise"),
-        ("L02", "Tool-Using Agent", "pass", "Typed tools for data and metrics"),
-        ("L03", "Skill Creation", "pass", "Reusable plan and formatting skills"),
-        ("L04", "Memory & Retrieval", "pass", "State vs stored knowledge"),
-        ("L05", "MCP Connector", "pass", "One connector for all sources"),
-        ("L06", "Governed Runtime", "pass", "Audit, checkpoints, budgets"),
-        ("L07", "Agentic Node Graph", "pass", "Graph pipeline and gate"),
-        ("L08", "Parallel Swarm", "pass", "Fan-out/fan-in merge"),
-        ("L09", "Deep Research", "pass", "Grounded evidence gate"),
-        ("L10", "Ops Resilience", "pass", "Validate, diagnose, repair"),
-        ("L11", "SDLC Factory", "pass", "Spec-to-tested-output"),
-        ("L12", "Governance", "pass", "Approval, eval, rollback"),
-        ("L13", "Specialists", "pass", "Domain specialists"),
-        ("L14", "Capstone", "active", "Integrated team-owned system"),
-    ]
-
-    st.markdown("### Chapter 3 lab coverage")
-    cards = "".join(
-        f"<div class='lab-card {state}'><div class='lab-header'><span class='lab-no'>{lab_no}</span><span class='lab-badge'>{status}</span></div><div class='lab-title'>{title}</div><div class='lab-desc'>{desc}</div></div>"
-        for lab_no, title, state, desc in labs
-        for status in ["pass" if state == "pass" else "active" if state == "active" else "pending"]
-    )
-    st.markdown(f"<div class='labs-grid'>{cards}</div>", unsafe_allow_html=True)
-
     with st.expander("Color guide", expanded=False):
         st.markdown(
             """
@@ -1302,10 +1606,12 @@ def main() -> None:
                 if deadline:
                     chips.append(gmail_chip(deadline, tone="tertiary"))
                 details = (
-                    f"<strong>Thread:</strong> {html.escape(row['Thread ID'])}<br>"
-                    f"<strong>Task:</strong> {html.escape(row['Task Description'])}<br>"
-                    f"<strong>Owner:</strong> {html.escape(row['Assigned Owner'])}<br>"
-                    f"<strong>Confirmed:</strong> {html.escape(row['Confirmed by Faculty'])}"
+                    "<div class='detail-metadata'>"
+                    f"<div class='detail-field'><span>Thread ID</span><strong>{html.escape(row['Thread ID'])}</strong></div>"
+                    f"<div class='detail-field'><span>Task</span><strong>{html.escape(row['Task Description'])}</strong></div>"
+                    f"<div class='detail-field'><span>Owner</span><strong>{html.escape(row['Assigned Owner'])}</strong></div>"
+                    f"<div class='detail-field'><span>Confirmed</span><strong>{html.escape(row['Confirmed by Faculty'])}</strong></div>"
+                    "</div>"
                 )
                 render_gmail_row(
                     "Faculty Mailbox Owner",
